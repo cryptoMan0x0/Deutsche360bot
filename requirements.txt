@@ -2,3 +2,4 @@ pyTelegramBotAPI
 requests
 beautifulsoup4
 flask
+lxml  # برای parse XML/HTML بهتر (آرتیکل دقیق)
