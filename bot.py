@@ -1,20 +1,22 @@
-# Deutsches Wörterbuch-Bot – Full Steps 1-4: Cache + Dict.cc + UI Inline + Audio Forvo + /lang Toggle
+# Deutsches Wörterbuch-Bot – Steps 1-4: Cache + Dict.cc + UI + gTTS Audio (Fixed Forvo issue)
 TOKEN = '8224460982:AAEPMMNfWxFfzqPTcqUCxKI0zJr8IP-dzG4'
 
 import telebot
 from telebot import types
-from telebot.types import CallbackQuery  # Step 4: For inline callbacks
+from telebot.types import CallbackQuery
 import requests
-from bs4 import BeautifulSoup  # From Step 3
+from bs4 import BeautifulSoup
 from flask import Flask, request
 import os
 import traceback
 import json
+from gtts import gTTS  # Step 4: Google TTS for audio (fixed Forvo)
+from io import BytesIO  # For MP3 in memory
 
 bot = telebot.TeleBot(TOKEN)
-print("Bot initialized – Steps 1-4: Glosbe + Cache + Dict.cc + UI/Audio/Lang")
+print("Bot initialized – Steps 1-4 with gTTS Audio (Forvo fixed)")
 
-# Small local for grammar/notes (fallback)
+# ... (grammar_fallback, user_levels, user_history, user_lang – same as before)
 grammar_fallback = {
     "blau": {"type": "Adjektiv", "article": "", "grammar_notes": "Deklination: ein blaues Auto (Neutr.); der blaue Himmel (Mask.). Komparativ: blauer, Superlativ: am blauensten."},
     "rot": {"type": "Adjektiv", "article": "", "grammar_notes": "Deklination: ein rotes Auto; der rote Apfel. Komparativ: röter."},
@@ -26,13 +28,13 @@ grammar_fallback = {
 
 user_levels = {}
 user_history = {}
-user_lang = {}  # Step 4: Per user language (default 'de')
+user_lang = {}  # default 'de'
 
-# Step 2: Cache for speed
+# Cache (Step 2)
 response_cache = {}
 max_cache = 100
 
-# Step 3: Dict.cc fallback (parse HTML)
+# Dict.cc (Step 3 – same)
 def get_dictcc_data(word):
     print(f"Debug: Dict.cc fallback for '{word}'")
     url = f"https://www.dict.cc/?s={word}&hl=de"
@@ -52,7 +54,6 @@ def get_dictcc_data(word):
                 grammar_notes = grammar_fallback.get(word, {}).get('grammar_notes', f'Grammatik: Standard (Dict.cc).')
                 full_data = {'word': word.capitalize(), 'definition': definition, 'article': article, 'type': word_type, 'synonyms': synonyms, 'examples': examples, 'grammar_notes': grammar_notes, 'source': 'Dict.cc'}
                 
-                # Cache
                 if len(response_cache) >= max_cache:
                     oldest_key = next(iter(response_cache))
                     del response_cache[oldest_key]
@@ -63,7 +64,7 @@ def get_dictcc_data(word):
         print(f"Debug: Dict.cc error: {str(e)}")
     return get_approximate(word)
 
-# Glosbe API (with cache + Dict.cc fallback – Steps 2-3)
+# Glosbe (Steps 2-3 – same)
 def get_glosbe_data(word):
     if word in response_cache:
         print(f"Debug: Cache hit for '{word}'")
@@ -104,7 +105,6 @@ def get_glosbe_data(word):
                 grammar_notes = grammar_fallback.get(word, {}).get('grammar_notes', f'Grammatik für {word_type}: Standard.')
                 full_data = {'word': phrase, 'definition': definition, 'article': article, 'type': word_type, 'synonyms': synonyms, 'examples': examples, 'grammar_notes': grammar_notes, 'source': 'Glosbe API'}
                 
-                # Cache
                 if len(response_cache) >= max_cache:
                     oldest_key = next(iter(response_cache))
                     del response_cache[oldest_key]
@@ -119,7 +119,7 @@ def get_glosbe_data(word):
         print(f"Debug: Glosbe error: {str(e)} – fallback Dict.cc")
     return get_dictcc_data(word)
 
-# Approximate fallback (final)
+# Approximate (same)
 def get_approximate(word):
     print(f"Debug: Approximate for '{word}'")
     word_type = 'Adjektiv' if word in ['blau', 'rot', 'groß'] else 'Verb' if word in ['kommen', 'essen'] else 'Nomen'
@@ -129,14 +129,13 @@ def get_approximate(word):
     grammar_notes = grammar_fallback.get(word, {}).get('grammar_notes', f'Standard für {word_type}.')
     full_data = {'word': word.capitalize(), 'definition': definition, 'article': article, 'type': word_type, 'synonyms': 'Ähnliche Wörter', 'examples': examples, 'grammar_notes': grammar_notes, 'source': 'Approximate'}
     
-    # Cache
     if len(response_cache) >= max_cache:
         oldest_key = next(iter(response_cache))
         del response_cache[oldest_key]
     response_cache[word] = full_data
     return full_data
 
-# get_local (with cache)
+# get_local (same)
 def get_local(word, message):
     word_lower = word.lower()
     if word_lower in grammar_fallback:
@@ -149,24 +148,21 @@ def get_local(word, message):
         return data
     return None
 
-# Step 4: Forvo Audio (pronunciation MP3)
-def get_audio_url(word):
-    print(f"Debug: Forvo audio for '{word}'")
-    url = f"https://apiforvo.com/v1/words/{word}/pronunciations?language=de&format=mp3"
+# Step 4: gTTS Audio (fixed – generate MP3 in memory)
+def get_audio_file(word):
+    print(f"Debug: gTTS audio for '{word}'")
     try:
-        response = requests.get(url, timeout=5)
-        if response.status_code == 200:
-            data = response.json()
-            if data['items'] and len(data['items']) > 0:
-                audio_url = data['items'][0]['path_mp3']  # First pronunciation
-                full_url = f"https://audio00.forvo.com/mp3/{audio_url}"
-                print(f"Debug: Forvo success: {full_url}")
-                return full_url
+        tts = gTTS(text=f"{word}, German pronunciation", lang='de', slow=False)  # Slow for clear pronunciation
+        mp3_buffer = BytesIO()
+        tts.write_to_fp(mp3_buffer)
+        mp3_buffer.seek(0)
+        print(f"Debug: gTTS success for '{word}'")
+        return mp3_buffer
     except Exception as e:
-        print(f"Debug: Forvo error: {str(e)}")
-    return None
+        print(f"Debug: gTTS error: {str(e)}")
+        return None
 
-# Step 4: Translate to Persian (simple dict – expand if needed)
+# Translate to FA (same – simple)
 def translate_to_fa(data, word):
     fa_dict = {
         "definition": "تعریف: " + data['definition'][:100] + " (تقریبی فارسی).",
@@ -178,14 +174,14 @@ def translate_to_fa(data, word):
     }
     return fa_dict
 
-# Handlers
+# Handlers (same as before, but /audio with gTTS)
 @bot.message_handler(commands=['start'])
 def start_message(message):
     print(f"Debug: /start")
     markup = types.ReplyKeyboardMarkup(row_width=1, resize_keyboard=True)
     markup.add(types.KeyboardButton("/lang de"), types.KeyboardButton("/lang fa"))
-    markup.add(types.KeyboardButton("/cache_info"), types.KeyboardButton("/audio blau"))  # Example
-    bot.reply_to(message, "Hallo! Bot mit Steps 1-4: Cache, Fallback, UI Inline + Audio + /lang!\nBefehle: /level, /local, /history, /lang fa/en, /audio <word>, /cache_info\nTest: 'blau' – klicke Buttons, /lang fa für فارسی, /audio blau für صدا!", reply_markup=markup)
+    markup.add(types.KeyboardButton("/cache_info"), types.KeyboardButton("/audio blau"))
+    bot.reply_to(message, "Hallo! Bot Steps 1-4: UI + gTTS Audio (fixed)!\nBefehle: /lang, /audio <word>, klicke Buttons.\nTest: 'blau' – Hören button, /audio blau!", reply_markup=markup)
 
 @bot.message_handler(commands=['lang'])
 def set_lang(message):
@@ -193,25 +189,27 @@ def set_lang(message):
     lang = parts[1].lower() if len(parts) > 1 else 'de'
     if lang in ['de', 'fa', 'en']:
         user_lang[message.from_user.id] = lang
-        bot.reply_to(message, f"Sprache auf {lang} gesetzt! (de=Deutsch, fa=فارسی, en=English)")
+        bot.reply_to(message, f"Sprache: {lang} gesetzt!")
     else:
-        bot.reply_to(message, "Verfügbare Sprachen: de, fa, en. /lang de (default)")
+        bot.reply_to(message, "Sprachen: de, fa, en.")
 
 @bot.message_handler(commands=['audio'])
 def send_audio(message):
     parts = message.text.split()
-    word = parts[1].lower() if len(parts) > 1 else 'blau'  # Default test
-    audio_url = get_audio_url(word)
-    if audio_url:
-        bot.send_voice(message.chat.id, audio_url, caption=f"Pronunciation von '{word}' (Forvo API – Step 4)")
+    word = parts[1].lower() if len(parts) > 1 else 'blau'
+    audio_buffer = get_audio_file(word)
+    if audio_buffer:
+        bot.send_voice(message.chat.id, audio_buffer, caption=f"Pronunciation '{word}' (gTTS – Step 4 fixed)")
+        print(f"Debug: Audio sent for '{word}'")
     else:
-        bot.reply_to(message, f"Audio nicht gefunden für '{word}'. Versuche ein gängiges Wort wie 'haus'.")
+        bot.reply_to(message, f"Audio generation failed for '{word}'. Try common word like 'haus'.")
 
+# Other handlers (cache_info, level, local, history – same as before)
 @bot.message_handler(commands=['cache_info'])
 def cache_info(message):
     cache_size = len(response_cache)
     cached_words = list(response_cache.keys())[:5]
-    bot.reply_to(message, f"Cache: {cache_size}/{max_cache} Wörter. Erste: {', '.join(cached_words)} (Steps 1-4)")
+    bot.reply_to(message, f"Cache: {cache_size}/{max_cache}. Erste: {', '.join(cached_words)}")
 
 @bot.message_handler(commands=['level'])
 def set_level(message):
@@ -228,13 +226,13 @@ def local_mode(message):
     markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True, one_time_keyboard=True)
     for key in grammar_fallback.keys():
         markup.row(types.KeyboardButton(key))
-    bot.reply_to(message, "Local Words: Choose! (Steps 1-4 active)")
+    bot.reply_to(message, "Local Words: Choose!")
 
 @bot.message_handler(commands=['history'])
 def show_history(message):
     hist = user_history.get(message.from_user.id, [])
     if hist:
-        bot.reply_to(message, "Last 5 Words:\n" + "\n".join(hist[-5:]))
+        bot.reply_to(message, "Last 5:\n" + "\n".join(hist[-5:]))
     else:
         bot.reply_to(message, "History empty!")
 
@@ -246,7 +244,7 @@ def handle_message(message):
     if len(word) < 2 or word.startswith('/'):
         return
 
-    # History
+    # History (same)
     if user_id not in user_history:
         user_history[user_id] = []
     user_history[user_id].append(word)
@@ -268,7 +266,6 @@ def handle_message(message):
             if len(examples) < 3:
                 examples.append(f"Advanced: {word} in Kontext.")
 
-        # Step 4: Language toggle
         lang = user_lang.get(user_id, 'de')
         if lang == 'fa':
             fa_data = translate_to_fa(data, word)
@@ -282,7 +279,7 @@ def handle_message(message):
             for ex in fa_data['examples']:
                 response += f"• {ex}\n"
             response += f"\n📝 {fa_data['grammar_notes']}"
-        else:  # de or en (same for now)
+        else:
             response = f"📖 **{data['word']}** ({data['type']}, {data['source']})\n\n"
             if data['article']:
                 response += f"📰 **Artikel:** {data['article']} {word}\n\n"
@@ -294,22 +291,22 @@ def handle_message(message):
                 response += f"• {ex}\n"
             response += f"\n📝 **Grammatik:** {data['grammar_notes']}"
 
-        # Step 4: Inline markup for UI
+        # Inline markup (same)
         markup = types.InlineKeyboardMarkup(row_width=2)
-        markup.add(types.InlineKeyboardButton("Synonyme anzeigen", callback_data=f"syn_{word}"),
+        markup.add(types.InlineKeyboardButton("Synonyme", callback_data=f"syn_{word}"),
                    types.InlineKeyboardButton("Mehr Beispiele", callback_data=f"ex_{word}"))
         markup.add(types.InlineKeyboardButton("Konjugation", callback_data=f"gram_{word}"),
                    types.InlineKeyboardButton("Hören (Audio)", callback_data=f"audio_{word}"))
         markup.add(types.InlineKeyboardButton("Mehr online", url=f"https://de.glosbe.com/de/de/{word}"))
 
         bot.reply_to(message, response, parse_mode='Markdown', reply_markup=markup)
-        print(f"Debug: UI response sent for '{word}' (lang: {lang})")
+        print(f"Debug: Response for '{word}' (lang: {lang})")
 
     except Exception as e:
-        print(f"Debug: Error for '{word}': {str(e)}")
+        print(f"Debug: Error: {str(e)}")
         bot.reply_to(message, f"Fehler: {str(e)}. /start neu.")
 
-# Step 4: Callback handlers for inline UI
+# Callback (updated for gTTS audio)
 @bot.callback_query_handler(func=lambda call: True)
 def callback_query(call: CallbackQuery):
     data = call.data
@@ -317,41 +314,34 @@ def callback_query(call: CallbackQuery):
     user_id = call.from_user.id
     
     if data.startswith('syn_'):
-        # Get synonyms
         full_data = response_cache.get(word, get_glosbe_data(word))
-        syn_text = full_data['synonyms'] if full_data['synonyms'] else 'Keine Synonyme gefunden.'
-        bot.edit_message_text(f"Synonyme für {word}: {syn_text}\n\n(Klicke /start für neu)", call.message.chat.id, call.message.message_id, parse_mode='Markdown')
-        print(f"Debug: Syn callback for {word}")
+        syn_text = full_data['synonyms'] if full_data['synonyms'] else 'Keine Synonyme.'
+        bot.edit_message_text(f"Synonyme für {word}: {syn_text}\n(/start neu)", call.message.chat.id, call.message.message_id, parse_mode='Markdown')
     elif data.startswith('ex_'):
-        # More examples
         full_data = response_cache.get(word, get_glosbe_data(word))
         ex_text = '\n'.join(full_data['examples'])
-        bot.edit_message_text(f"Mehr Beispiele für {word}:\n{ex_text}\n\n(Klicke /start für neu)", call.message.chat.id, call.message.message_id)
-        print(f"Debug: Ex callback for {word}")
+        bot.edit_message_text(f"Mehr Beispiele für {word}:\n{ex_text}\n(/start neu)", call.message.chat.id, call.message.message_id)
     elif data.startswith('gram_'):
-        # Grammar
         full_data = response_cache.get(word, get_glosbe_data(word))
         gram_text = full_data['grammar_notes']
-        bot.edit_message_text(f"Konjugation/Grammatik für {word}:\n{gram_text}\n\n(Klicke /start für neu)", call.message.chat.id, call.message.message_id)
-        print(f"Debug: Gram callback for {word}")
+        bot.edit_message_text(f"Grammatik für {word}:\n{gram_text}\n(/start neu)", call.message.chat.id, call.message.message_id)
     elif data.startswith('audio_'):
-        # Audio
-        audio_url = get_audio_url(word)
-        if audio_url:
-            bot.delete_message(call.message.chat.id, call.message.message_id)  # Delete old
-            bot.send_voice(call.message.chat.id, audio_url, caption=f"Pronunciation von '{word}' (Forvo – Step 4)")
+        # Generate and send gTTS
+        bot.answer_callback_query(call.id, "Generating audio...")  # Feedback
+        audio_buffer = get_audio_file(word)
+        if audio_buffer:
+            bot.delete_message(call.message.chat.id, call.message.message_id)  # Clean
+            bot.send_voice(call.message.chat.id, audio_buffer, caption=f"Pronunciation '{word}' (gTTS fixed – Step 4)")
         else:
-            bot.answer_callback_query(call.id, "Audio nicht verfügbar. Versuche /audio {word}")
-        print(f"Debug: Audio callback for {word}")
+            bot.answer_callback_query(call.id, "Audio failed. Try /audio {word}")
     else:
-        bot.answer_callback_query(call.id, "Button gedrückt – mehr Infos!")
+        bot.answer_callback_query(call.id, "Button clicked!")
 
-# Webhook
+# Webhook (same)
 app = Flask(__name__)
 
 @app.route(f'/{TOKEN}', methods=['POST'])
 def webhook():
-    print("Debug: Webhook")
     if request.headers.get('content-type') == 'application/json':
         json_string = request.get_data().decode('utf-8')
         update = telebot.types.Update.de_json(json_string)
@@ -361,7 +351,7 @@ def webhook():
 
 @app.route('/', methods=['GET'])
 def index():
-    return '<h1>Bot Steps 1-4: UI + Audio + Lang – interactive!</h1>'
+    return '<h1>Bot Steps 1-4: gTTS Audio Fixed!</h1>'
 
 bot.remove_webhook()
 bot.set_webhook(url=f'https://deutsche360-bot.onrender.com/{TOKEN}')
@@ -369,4 +359,4 @@ bot.set_webhook(url=f'https://deutsche360-bot.onrender.com/{TOKEN}')
 PORT = int(os.environ.get('PORT', 5000))
 app.run(host='0.0.0.0', port=PORT)
 
-print("Bot Steps 1-4 started – UI, Audio, Lang ready!")
+print("Bot with gTTS Audio started – audio works!")
