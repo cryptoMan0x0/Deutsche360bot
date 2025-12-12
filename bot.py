@@ -20,7 +20,7 @@ grammar_fallback = {
     "kommen": {"type": "Verb", "article": "", "grammar_notes": "Starkes Verb. Präsens: ich komme, du kommst, er kommt. Präteritum: kam, Partizip II: gekommen."},
     "essen": {"type": "Verb", "article": "", "grammar_notes": "Starkes Verb. Präsens: ich esse, du isst. Präteritum: aß, Partizip II: gegessen."},
     "haus": {"type": "Nomen", "article": "das", "grammar_notes": "Neutrum. Plural: Häuser. Deklination: das Haus (Nom./Akk.), des Hauses (Gen.)."},
-    # Add more if needed (e.g., philosoph ie: Nomen, die, Plural: Philosophien)
+    # Add more if needed (e.g., philosophie: Nomen, die, Plural: Philosophien)
 }
 
 user_levels = {}
@@ -67,6 +67,8 @@ def get_glosbe_data(word):
                 grammar_notes = grammar_fallback.get(word, {}).get('grammar_notes', f'Grammatik für {word_type}: Standard Deklination/Konjugation (Glosbe + fallback).')
                 print(f"Debug: Glosbe success for '{word}'")
                 return {'word': phrase, 'definition': definition, 'article': article, 'type': word_type, 'synonyms': synonyms, 'examples': examples, 'grammar_notes': grammar_notes, 'source': 'Glosbe API'}
+            else:
+                print(f"Debug: No Glosbe data – fallback approximate")
         else:
             print(f"Debug: Glosbe status {response.status_code} for '{word}'")
     except Exception as e:
