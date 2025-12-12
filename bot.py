@@ -1,10 +1,12 @@
-# بات دیکشنری آلمانی به آلمانی با Wiktionary API (با User-Agent برای حل 403)
+# بات دیکشنری آلمانی به آلمانی با Wiktionary API (webhook برای Render)
 TOKEN = '8224460982:AAEPMMNfWxFfzqPTcqUCxKI0zJr8IP-dzG4'  # Tokenت
 
 # کتابخونه‌ها
 import telebot
 import requests
-from bs4 import BeautifulSoup  # برای پارس HTML/JSON بهتر
+from bs4 import BeautifulSoup
+from flask import Flask, request
+import os
 
 bot = telebot.TeleBot(TOKEN)
 
@@ -23,7 +25,7 @@ def get_german_definition(word):
         'exlimit': 'max',
         'pllimit': 'max'
     }
-    # Header مهم برای حل 403 (User-Agent با کانتکت تو)
+    # Header برای حل 403
     headers = {
         'User-Agent': 'GermanDictBot/1.0 (Personal educational bot by @sprachschule67; contact: @sprachschule67)'
     }
@@ -125,8 +127,30 @@ def handle_message(message):
         
         bot.reply_to(message, response, parse_mode='Markdown')
 
-# شروع
-print("بات با User-Agent (@sprachschule67) شروع شد! (برای حل 403)")
+# برای Render: webhook mode (حل ports)
+app = Flask(__name__)
 
-bot.remove_webhook()  # پاک کردن در قدیمی (اگر باشه)
-bot.infinity_polling()  # روش جدید برای Render
+@app.route(f'/{TOKEN}', methods=['POST'])
+def webhook():
+    if request.headers.get('content-type') == 'application/json':
+        json_string = request.get_data().decode('utf-8')
+        update = telebot.types.Update.de_json(json_string)
+        bot.process_new_updates([update])
+        return ''
+    else:
+        return 'Unauthorized'
+
+@app.route('/', methods=['GET', 'HEAD'])
+def index():
+    return '<h1>بات دیکشنری آلمانی آنلاین! (@sprachschule67)</h1>'
+
+# شروع webhook
+bot.remove_webhook()
+webhook_url = f'https://deutsche360-bot.onrender.com/{TOKEN}'
+bot.set_webhook(url=webhook_url)
+
+# اجرای سرور (باز کردن پورت)
+PORT = int(os.environ.get('PORT', 5000))
+app.run(host='0.0.0.0', port=PORT)
+
+print("بات با webhook شروع شد! (برای Render)")
