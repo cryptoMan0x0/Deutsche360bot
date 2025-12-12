@@ -1,128 +1,160 @@
-# Deutsches Wörterbuch-Bot stark verbessert: Multi-Source (PONS/Wiktionary/Duden) + 150 lokalen Wörtern (kommen, sein, etc. – keine Fehler)
-TOKEN = '8224460982:AAEPMMNfWxFfzqPTcqUCxKI0zJr8IP-dzG4'
+# Deutsches Wörterbuch-Bot – Einfach & Test (nur /start + 5 local words, Debug full)
+TOKEN = '8224460982:AAEPMMNfWxFfzqPTcqUCxKI0zJr8IP-dzG4'  # Ersetze mit neuem Token wenn nötig!
 
-# Bibliotheken
 import telebot
 from telebot import types
 import requests
 from bs4 import BeautifulSoup
 from flask import Flask, request
 import os
-from lxml import html
+import traceback
 
 bot = telebot.TeleBot(TOKEN)
+print("Bot initialized – Token OK?")
 
-# Stark erweiterte local_dict (150 Wörter: häufigste Verben, Adjektive, Artikel, Präpositionen – vollständige Abdeckung für 90% Alltag)
+# Einfaches local_dict (nur 5 Testwörter – erweitern später)
 local_dict = {
-    # Basis (haus, freund, auto, quark, baum, liebe, essen, gehen, groß, gut, schön, neu, alt, schnell, klein, wichtig, schlecht, teuer, billig, heiß, kalt, süß, bitter, fröhlich, traurig, langsam, arbeit, zeit, mensch, welt, leben, tag, nacht, stunde, jahr, wort, sache, hand, auge – 40)
-    "haus": {"type": "Nomen", "article": "das", "definition": "Gebäude zum Wohnen oder Arbeiten. Schutzraum für Menschen.", "synonyms": "Wohnung, Gebäude, Heim, Behausung", "examples": {"beginner": "Das Haus ist groß.", "medium": "Ich wohne in einem Haus in der Stadt.", "advanced": "Das gotische Haus ist ein historisches Denkmal."}, "grammar": "Neutrum (das Haus). Plural: Häuser (Umlaut). Deklination: das Haus (Nom./Akk.), des Hauses (Gen.), dem Haus (Dat.). Frequenz: hoch."},
-    "freund": {"type": "Nomen", "article": "der", "definition": "Person mit enger freundschaftlicher Beziehung. Teilt Freuden und Sorgen.", "synonyms": "Kumpel, Genosse, Gefährte, Bekannter", "examples": {"beginner": "Der Freund ist nett.", "medium": "Mein Freund hilft mir immer.", "advanced": "Ein wahrer Freund prüft sich im Unglück."}, "grammar": "Maskulinum (der Freund). Plural: Freunde. Weiblich: die Freundin. Deklination: standard Maskulinum. Frequenz: hoch."},
-    "auto": {"type": "Nomen", "article": "das", "definition": "Kraftfahrzeug mit Motor und Rädern. Modernes Transportmittel.", "synonyms": "Wagen, Fahrzeug, Karre, PKW", "examples": {"beginner": "Das Auto fährt schnell.", "medium": "Ich parke das Auto.", "advanced": "Das Elektroauto reduziert Emissionen."}, "grammar": "Neutrum (das Auto). Plural: Autos. Deklination: das Auto (Nom./Akk.), des Autos (Gen.), dem Auto (Dat.). Frequenz: sehr hoch."},
-    # ... (for brevity, add all previous 90; full in GitHub – quark, baum, philosoph, bier, lieben, blau, lernen, singen, lesen, rot, grün, gelb, schwarz, weiß, groß, klein, lang, kurz, alt, neu, arbeit, zeit, etc.)
-    # Neue 50 für Vollständigkeit (Verben, Adjektive, etc. – kommen, sein, werden, haben, tun, gehen, kommen, sagen, sehen, machen, finden, geben, nehmen, wissen, wollen, müssen, können, sollen, dürfen, mögen; Adjektive: gut, schlecht, schön, hässlich, lang, kurz, dick, dünn, schwer, leicht, warm, kühl, laut, leise, hart, weich, rund, eckig; Artikel/Präp: der, die, das, ein, eine, und, in, zu, von, mit, auf, an, aus, für, bei, nach, vor, gegen, über, unter)
-    "kommen": {"type": "Verb", "article": "", "definition": "Sich einem Ort nähern oder ankommen. Bewegung zum Sprecher.", "synonyms": "Ankommen, eintreffen, erscheinen, gelangen", "examples": {"beginner": "Ich komme jetzt.", "medium": "Wann kommst du an?", "advanced": "Der Gast kommt pünktlich zum Fest."}, "grammar": "Starkes Verb (kommen). Präsens: ich komme, du kommst, er kommt, wir kommen, ihr kommt, sie kommen. Präteritum: kam. Partizip II: gekommen. Imperativ: komm(e)! Separabel: ankommen. Frequenz: sehr hoch (#12)."},
-    "sein": {"type": "Verb", "article": "", "definition": "Existieren oder Zustand beschreiben. Grundverb für Identität.", "synonyms": "Existieren, leben, werden", "examples": {"beginner": "Ich bin hier.", "medium": "Das ist gut.", "advanced": "Sein oder nicht sein – das ist die Frage."}, "grammar": "Unregelmäßiges Verb (sein). Präsens: ich bin, du bist, er ist, wir sind, ihr seid, sie sind. Präteritum: war. Partizip II: gewesen. Imperativ: sei! Frequenz: #1 Verb."},
-    "werden": {"type": "Verb", "article": "", "definition": "Zukünftig handeln oder Passiv bilden. Hilfsverb für Futur.", "synonyms": "Entstehen, wachsen, werden (Passiv)", "examples": {"beginner": "Ich werde essen.", "medium": "Es wird regnen.", "advanced": "Die Blume wird zur Rose."}, "grammar": "Unregelmäßiges Verb (werden). Präsens: ich werde, du wirst, er wird. Präteritum: wurde. Partizip II: geworden. Frequenz: hoch (#23)."},
-    # (Add all 50: haben: Präsens ich habe/du hast; tun: Präsens ich tue/du tust; sagen: Präsens ich sage/du sagst; sehen: Präsens ich sehe/du siehst; machen: Präsens ich mache/du machst; finden: Präsens ich finde/du findest; geben: Präsens ich gebe/du gibst; nehmen: Präsens ich nehme/du nimmst; wissen: Präsens ich weiß/du weißt; wollen: Präsens ich will/du willst; müssen: Präsens ich muss/du musst; können: Präsens ich kann/du kannst; sollen: Präsens ich soll/du sollst; dürfen: Präsens ich darf/du darfst; mögen: Präsens ich mag/du magst; Adjektive: gut: Komparativ besser; schlecht: schlechter; schön: schöner; hässlich: hässlicher; lang: länger; kurz: kürzer; dick: dicker; dünn: dünner; schwer: schwerer; leicht: leichter; warm: wärmer; kühl: kühler; laut: lauter; leise: leiser; hart: härter; weich: weicher; rund: runder; eckig: eckiger; Präp/Artikel: der: Mask. Nom.; die: Fem./Pl. Nom.; das: Neut. Nom.; ein: unbestimmter Mask./Neut.; eine: unbestimmter Fem.; und: Konjunktion; in: Präp. Dat./Akk.; zu: Präp. Dat.; von: Präp. Dat.; mit: Präp. Dat.; auf: Präp. Dat./Akk.; an: Präp. Dat./Akk.; aus: Präp. Dat.; für: Präp. Akk.; bei: Präp. Dat.; nach: Präp. Dat.; vor: Präp. Dat.; gegen: Präp. Akk.; über: Präp. Dat./Akk.; unter: Präp. Dat./Akk. – full entries with examples/grammar)
+    "haus": {"type": "Nomen", "article": "das", "definition": "Gebäude zum Wohnen.", "synonyms": "Wohnung, Gebäude", "examples": {"beginner": "Das Haus ist groß.", "medium": "Ich wohne im Haus.", "advanced": "Historisches Haus."}, "grammar": "Neutrum. Plural: Häuser."},
+    "essen": {"type": "Verb", "article": "", "definition": "Nahrung aufnehmen.", "synonyms": "Speisen, verspeisen", "examples": {"beginner": "Ich esse.", "medium": "Wir essen zusammen.", "advanced": "Ich esse gesund."}, "grammar": "Starkes Verb. Präsens: ich esse, du isst."},
+    "groß": {"type": "Adjektiv", "article": "", "definition": "Hohe Größe oder Bedeutung.", "synonyms": "Riesig, enorm", "examples": {"beginner": "Großes Haus.", "medium": "Großer Erfolg.", "advanced": "Große Ideen."}, "grammar": "Adjektiv. Komparativ: größer."},
+    "kommen": {"type": "Verb", "article": "", "definition": "Sich nähern oder ankommen.", "synonyms": "Ankommen, eintreffen", "examples": {"beginner": "Ich komme.", "medium": "Komm her.", "advanced": "Der Zug kommt."}, "grammar": "Starkes Verb. Präsens: ich komme, du kommst."},
+    "gut": {"type": "Adjektiv", "article": "", "definition": "Hohe Qualität oder positiv.", "synonyms": "Ausgezeichnet, positiv", "examples": {"beginner": "Gut gemacht!", "medium": "Guter Rat.", "advanced": "Gute Absichten."}, "grammar": "Adjektiv. Komparativ: besser."}
 }
 
-# Benutzerdaten
 user_levels = {}
 user_history = {}
 
-# Multi-Source Scrape: PONS first, then Wiktionary, then Duden
-def get_german_definition(word):
-    sources = [
-        {'name': 'PONS', 'url': f"https://de.pons.com/uebersetzung/deutsch/{word}", 'parse_func': parse_pons},
-        {'name': 'Wiktionary', 'url': f"https://de.wiktionary.org/wiki/{word}", 'parse_func': parse_wiktionary},
-        {'name': 'Duden', 'url': f"https://www.duden.de/rechtschreibung/{word}", 'parse_func': parse_duden}
-    ]
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 (Educational German learning bot; no commercial use)'}
-    
-    for source in sources:
-        try:
-            response = requests.get(source['url'], headers=headers, timeout=20)
-            if response.status_code == 200:
-                soup = BeautifulSoup(response.text, 'html.parser')
-                data = source['parse_func'](soup, word)
-                if 'error' not in data:
-                    data['source'] = source['name']
-                    return data
-        except Exception as e:
-            continue  # Next source
-    
-    # Final fallback with approximate for common words
-    if word in ['kommen', 'sein', 'werden']:  # Example for kommen
-        return {
-            'word': word.capitalize(),
-            'definition': 'Sich nähern oder ankommen (für kommen).',
-            'article': '',
-            'type': 'Verb',
-            'synonyms': 'Ankommen, eintreffen',
-            'examples': ['Ich komme bald.'],
-            'grammar_notes': 'Starkes Verb. Präsens: ich komme, du kommst, er kommt; Präteritum: kam; Partizip: gekommen.',
-            'source': 'Fallback Approximate'
-        }
-    return {'error': f'Keine Quelle verfügbar. Link: https://de.pons.com/uebersetzung/deutsch/{word}. Für "kommen": Verb, Präsens: ich komme/du kommst; siehe Wiktionary.'}
+# Einfacher Scrape-Fallback (nur PONS, no multi for test)
+def get_definition(word):
+    print(f"Debug: Scrape for '{word}'")
+    try:
+        url = f"https://de.pons.com/uebersetzung/deutsch/{word}"
+        headers = {'User-Agent': 'Mozilla/5.0 (Test bot)'}
+        response = requests.get(url, headers=headers, timeout=10)
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.text, 'html.parser')
+            def_text = soup.find('p').get_text().strip()[:200] if soup.find('p') else 'Definition from PONS.'
+            print(f"Debug: PONS success for '{word}'")
+            return {'definition': def_text, 'source': 'PONS'}
+        else:
+            print(f"Debug: PONS status {response.status_code} for '{word}'")
+            return {'definition': f'Keine Definition. Link: {url}', 'source': 'Fallback'}
+    except Exception as e:
+        print(f"Debug: Scrape error for '{word}': {str(e)}")
+        return {'definition': f'Fehler: {str(e)}. Suche online.', 'source': 'Error'}
 
-# Parse functions (simplified for each source)
-def parse_pons(soup, word):
-    # Typ, Artikel, Definition, Synonyme, Examples, Grammatik – full logic as in previous codes, but robust
-    type_tag = soup.find(string=lambda t: 'Verb' in t) or soup.find(string=lambda t: 'Substantiv' in t)
-    word_type = 'Verb' if type_tag and 'verb' in type_tag.lower() else 'Nomen'
-    # ... (similar to previous, extract first definition, synonyms from links, examples from spans, grammar from tables)
-    return {'word': word.capitalize(), 'definition': 'Extracted def...', 'article': 'extracted', 'type': word_type, 'synonyms': 'syn1, syn2', 'examples': ['Ex1.', 'Ex2.'], 'grammar_notes': 'Grammar extracted.'}  # Placeholder; full in code
-
-def parse_wiktionary(soup, word):
-    # Similar, focus on Konjugation for Verben
-    # Extract from {{Substantiv}} or Konjugation table
-    return {'word': word.capitalize(), 'definition': 'Wikt def...', 'article': 'extracted', 'type': 'Verb', 'synonyms': '', 'examples': ['Wikt ex.'], 'grammar_notes': 'Konjugation from table.'}
-
-def parse_duden(soup, word):
-    # Extract from h2 word-type, grammatical_gender
-    return {'word': word.capitalize(), 'definition': 'Duden def...', 'article': 'das', 'type': 'Nomen', 'synonyms': '', 'examples': ['Duden ex.'], 'grammar_notes': 'Artikel: das.'}
-
-# get_local_definition (full for 150 words)
-def get_local_definition(word, message):
+def get_local(word):
     if word in local_dict:
-        data = local_dict[word]
-        level = user_levels.get(message.from_user.id, 'medium')
-        examples = [data['examples'][level]]
-        return {'word': word.capitalize(), 'definition': data['definition'], 'article': data['article'], 'type': data['type'], 'synonyms': data['synonyms'], 'examples': examples, 'grammar_notes': data['grammar'], 'source': 'Local'}
-    return {'error': f'"{word}" nicht lokal, aber in Multi-Source gesucht. Link: https://de.pons.com/uebersetzung/deutsch/{word}.'}
+        print(f"Debug: Local found for '{word}'")
+        return local_dict[word]
+    print(f"Debug: No local for '{word}'")
+    return None
 
-# Handlers (same, with multi-source in handle_message)
+# /start – Einfach & mit try/except
 @bot.message_handler(commands=['start'])
 def start_message(message):
-    bot.reply_to(message, "Hallo! Stark verbesserter Bot mit 150 lokalen Wörtern + Multi-Source (PONS/Wiktionary/Duden) – keine Fehler mehr!\nBefehle: /level beginner|medium|advanced, /local (150 Wörter), /history\nWort eingeben (z.B. 'kommen' für Verb-Konjugation)!")
+    print(f"Debug: /start called by user {message.from_user.id} – Name: {message.from_user.first_name}")
+    try:
+        bot.reply_to(message, "Hallo! Deutsches Wörterbuch-Bot gestartet! 🚀\n\nBefehle:\n/level beginner|medium|advanced – Niveau setzen\n/local – Lokale Wörter (5 Test)\n/history – Verlauf\n\nWort eingeben, z.B. 'haus' oder 'kommen'.\nQuelle: Local + PONS.de\n\n/grammatik für Infos.")
+        print("Debug: /start reply sent successfully!")
+    except Exception as e:
+        print(f"Debug: /start exception: {str(e)}\n{traceback.format_exc()}")
+        # Fallback reply
+        bot.reply_to(message, f"Hallo! Bot läuft, aber Fehler: {str(e)}. /start erneut.")
 
-# /level, /local (show all 150, paginated)
+# /level
 @bot.message_handler(commands=['level'])
 def set_level(message):
-    # same as before
-    pass
+    print("Debug: /level called")
+    parts = message.text.split()
+    level = parts[1].lower() if len(parts) > 1 else 'medium'
+    if level in ['beginner', 'medium', 'advanced']:
+        user_levels[message.from_user.id] = level
+        bot.reply_to(message, f"Niveau {level} gesetzt!")
+        print(f"Debug: Level set to {level}")
+    else:
+        bot.reply_to(message, "Verfügbare Niveaus: beginner, medium, advanced")
 
+# /local
 @bot.message_handler(commands=['local'])
 def local_mode(message):
-    markup = types.ReplyKeyboardMarkup(row_width=5, resize_keyboard=True)
-    keys = list(local_dict.keys())
-    for i in range(0, min(25, len(keys)), 5):  # First page
-        row = [types.KeyboardButton(keys[j]) for j in range(i, min(i+5, len(keys)))]
-        markup.row(*row)
-    bot.reply_to(message, "Local Dict (150 Wörter): Seite 1/6. Wähle! (Mehr: /local 2)", reply_markup=markup)
+    print("Debug: /local called")
+    markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True, one_time_keyboard=True)
+    for key in local_dict:
+        markup.row(types.KeyboardButton(key))
+    bot.reply_to(message, "Lokale Wörter (5 Test): Tippe ein Wort!", reply_markup=markup)
 
-# /history same
+# /history
+@bot.message_handler(commands=['history'])
+def show_history(message):
+    print("Debug: /history called")
+    hist = user_history.get(message.from_user.id, [])
+    if hist:
+        bot.reply_to(message, "Letzte Wörter:\n" + "\n".join(hist[-5:]))
+    else:
+        bot.reply_to(message, "Noch keine Wörter gesucht!")
 
-@bot.message_handler(func=lambda message: True)
+# Haupt-Handler
+@bot.message_handler(func=lambda m: True)
 def handle_message(message):
-    # same logic, but data = get_german_definition(word) first, then local
-    # Response with full format, always something returns
-    pass
+    word = message.text.strip().lower()
+    user_id = message.from_user.id
+    print(f"Debug: Message '{word}' from {user_id}")
+    if len(word) < 2 or word.startswith('/'):
+        return
 
-# Callback same
+    # History
+    if user_id not in user_history:
+        user_history[user_id] = []
+    user_history[user_id].append(word)
+    if len(user_history[user_id]) > 10:
+        user_history[user_id] = user_history[user_id][-10:]
 
-# Webhook same
+    try:
+        level_data = get_local(word)
+        if level_data:
+            data = level_data
+            level = user_levels.get(user_id, 'medium')
+            example = data['examples'].get(level, data['examples']['medium'])
+            response = f"📖 **{word.capitalize()}** ({data['type']}, Local)\n\n📰 Artikel: {data['article']} {word}\n\n📚 Definition: {data['definition']}\n\n🔄 Synonyme: {data['synonyms']}\n\n💡 Beispiel ({level}): {example}\n\n📝 Grammatik: {data['grammar']}"
+        else:
+            scrape_data = get_definition(word)
+            response = f"📖 **{word.capitalize()}** (PONS)\n\n📚 Definition: {scrape_data['definition']}\n\nLink: https://de.pons.com/uebersetzung/deutsch/{word}"
+
+        bot.reply_to(message, response, parse_mode='Markdown')
+        print(f"Debug: Response for '{word}' sent!")
+
+    except Exception as e:
+        print(f"Debug: Handle exception for '{word}': {str(e)}\n{traceback.format_exc()}")
+        bot.reply_to(message, f"Fehler bei '{word}': {str(e)}. Probiere /start.")
+
+# Callback simple
+@bot.callback_query_handler(func=lambda call: True)
+def callback(call):
+    print("Debug: Callback")
+    bot.answer_callback_query(call.id, "OK!")
+
+# Flask Webhook
 app = Flask(__name__)
-# ... (full webhook and app.run as before)
 
-print("Starker Bot gestartet – 150 Wörter local, Multi-Source, keine Fehler!")
+@app.route(f'/{TOKEN}', methods=['POST'])
+def webhook():
+    print("Debug: Webhook POST")
+    if request.headers.get('content-type') == 'application/json':
+        json_string = request.get_data().decode('utf-8')
+        update = telebot.types.Update.de_json(json_string)
+        bot.process_new_updates([update])
+        return ''
+    return 'Unauthorized', 401
+
+@app.route('/', methods=['GET'])
+def index():
+    print("Debug: GET /")
+    return '<h1>Bot läuft! Test /start</h1>'
+
+bot.remove_webhook()
+bot.set_webhook(url=f'https://deutsche360-bot.onrender.com/{TOKEN}')
+
+PORT = int(os.environ.get('PORT', 5000))
+print(f"Starting bot on port {PORT}")
+app.run(host='0.0.0.0', port=PORT)
