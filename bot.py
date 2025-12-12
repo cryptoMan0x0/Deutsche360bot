@@ -1,18 +1,137 @@
-# بات دیکشنری آلمانی به آلمانی با Wiktionary API (webhook برای Render)
-TOKEN = '8224460982:AAEPMMNfWxFfzqPTcqUCxKI0zJr8IP-dzG4'  # Tokenت
+# Deutsches Wörterbuch-Bot (Deutsch zu Deutsch, mit Wiktionary API)
+TOKEN = '8224460982:AAEPMMNfWxFfzqPTcqUCxKI0zJr8IP-dzG4'
 
-# کتابخونه‌ها
+# Bibliotheken
 import telebot
+from telebot import types
 import requests
 from bs4 import BeautifulSoup
 from flask import Flask, request
 import os
+import json
 
 bot = telebot.TeleBot(TOKEN)
 
-# تابع برای گرفتن داده از Wiktionary API (با header)
+# Lokales Wörterbuch (10 gängige Wörter, Deutsch zu Deutsch)
+local_dict = {
+    "haus": {
+        "article": "das",
+        "definition": "Gebäude, in dem Menschen wohnen. Ein Haus dient als Wohnraum und Schutz.",
+        "synonyms": "Wohnung, Gebäude, Heim",
+        "examples": {
+            "beginner": "Das Haus ist groß.",
+            "medium": "Ich wohne in einem alten Haus.",
+            "advanced": "Das moderne Haus hat smarte Technologie."
+        },
+        "grammar": "Neutrum (das Haus), Plural: Häuser. Geschlecht: neutral."
+    },
+    "freund": {
+        "article": "der",
+        "definition": "Person, mit der man eine enge Beziehung hat. Ein Freund ist loyal und unterstützend.",
+        "synonyms": "Kumpel, Bekannter, Partner",
+        "examples": {
+            "beginner": "Der Freund ist nett.",
+            "medium": "Mein Freund hilft mir.",
+            "advanced": "Der beste Freund bleibt immer treu."
+        },
+        "grammar": "Maskulinum (der Freund), weiblich: Freundin (die). Plural: Freunde."
+    },
+    "auto": {
+        "article": "das",
+        "definition": "Fahrzeug mit Motor und Rädern. Das Auto dient dem Transport.",
+        "synonyms": "Wagen, Fahrzeug, Karre",
+        "examples": {
+            "beginner": "Das Auto ist rot.",
+            "medium": "Ich fahre mit dem Auto zur Arbeit.",
+            "advanced": "Das Elektroauto ist umweltfreundlich."
+        },
+        "grammar": "Neutrum (das Auto), Plural: Autos. Geschlecht: neutral."
+    },
+    "buch": {
+        "article": "das",
+        "definition": "Gedrucktes Werk mit Seiten und Text. Ein Buch vermittelt Wissen.",
+        "synonyms": "Roman, Heft, Schrift",
+        "examples": {
+            "beginner": "Das Buch ist interessant.",
+            "medium": "Ich lese ein Buch jeden Abend.",
+            "advanced": "Dieses Buch behandelt Philosophie."
+        },
+        "grammar": "Neutrum (das Buch), Plural: Bücher. Verb: lesen."
+    },
+    "liebe": {
+        "article": "die",
+        "definition": "Starkes Gefühl der Zuneigung. Liebe verbindet Menschen.",
+        "synonyms": "Affektion, Zuneigung, Leidenschaft",
+        "examples": {
+            "beginner": "Die Liebe ist schön.",
+            "medium": "Ich liebe meine Familie.",
+            "advanced": "Liebe erfordert Verständnis."
+        },
+        "grammar": "Femininum (die Liebe), Verb: lieben."
+    },
+    "essen": {
+        "article": "das",
+        "definition": "Aufnahme von Nahrung. Essen nährt den Körper.",
+        "synonyms": "Mahlzeit, Speisen",
+        "examples": {
+            "beginner": "Ich esse Brot.",
+            "medium": "Wir essen zusammen.",
+            "advanced": "Gesundes Essen ist wichtig."
+        },
+        "grammar": "Verb (essen), Präsens: ich esse, du isst."
+    },
+    "gehen": {
+        "article": "",
+        "definition": "Bewegung zu Fuß. Gehen ist eine grundlegende Handlung.",
+        "synonyms": "Laufen, Wandern",
+        "examples": {
+            "beginner": "Ich gehe nach Hause.",
+            "medium": "Geh langsam.",
+            "advanced": "Er geht spazieren."
+        },
+        "grammar": "Verb (gehen), Präsens: ich gehe, du gehst."
+    },
+    "schule": {
+        "article": "die",
+        "definition": "Ort zum Lernen. Die Schule bildet Jugendliche aus.",
+        "synonyms": "Bildungseinrichtung, Klasse",
+        "examples": {
+            "beginner": "Die Schule ist groß.",
+            "medium": "Ich gehe zur Schule.",
+            "advanced": "Die Schule hat gute Lehrer."
+        },
+        "grammar": "Femininum (die Schule), Plural: Schulen."
+    },
+    "wasser": {
+        "article": "das",
+        "definition": "Flüssigkeit zum Trinken. Wasser ist lebensnotwendig.",
+        "synonyms": "Getränk, Flüssigkeit",
+        "examples": {
+            "beginner": "Das Wasser ist kalt.",
+            "medium": "Trink Wasser.",
+            "advanced": "Sauberes Wasser ist essenziell."
+        },
+        "grammar": "Neutrum (das Wasser), Plural: Wasser (kein Plural)."
+    },
+    "freundin": {
+        "article": "die",
+        "definition": "Weibliche Form von Freund. Eine Freundin ist vertraut.",
+        "synonyms": "Freundin, Bekannte",
+        "examples": {
+            "beginner": "Die Freundin ist nett.",
+            "medium": "Meine Freundin ruft an.",
+            "advanced": "Sie ist meine beste Freundin."
+        },
+        "grammar": "Femininum (die Freundin), Plural: Freundinnen."
+    }
+}
+
+# Benutzerlevels und History
+user_levels = {}
+user_history = {}
+
+# Wiktionary-API (Deutsch zu Deutsch, pur)
 def get_german_definition(word):
-    # URL API Wiktionary
     url = f"https://de.wiktionary.org/w/api.php"
     params = {
         'action': 'query',
@@ -25,7 +144,6 @@ def get_german_definition(word):
         'exlimit': 'max',
         'pllimit': 'max'
     }
-    # Header برای حل 403
     headers = {
         'User-Agent': 'GermanDictBot/1.0 (Personal educational bot by @sprachschule67; contact: @sprachschule67)'
     }
@@ -34,16 +152,12 @@ def get_german_definition(word):
         if response.status_code == 200:
             data = response.json()
             pages = data['query'].get('pages', {})
-            if pages and not str(list(pages.keys())[0]).startswith('-1'):  # اگر صفحه پیدا شد
+            if pages and not str(list(pages.keys())[0]).startswith('-1'):
                 page = list(pages.values())[0]
-                extract = page.get('extract', 'تعریف پیدا نشد').strip()
-                
-                # پارس ساده با BeautifulSoup
+                extract = page.get('extract', 'Definition nicht gefunden').strip()
                 soup = BeautifulSoup(extract, 'html.parser') if extract else None
                 text = soup.get_text() if soup else extract
-                
-                # استخراج آرتیکل (der/die/das)
-                article = 'نامشخص'
+                article = 'unbekannt'
                 lower_text = text.lower()
                 if 'der ' in lower_text[:20]:
                     article = 'der'
@@ -51,83 +165,152 @@ def get_german_definition(word):
                     article = 'die'
                 elif 'das ' in lower_text[:20]:
                     article = 'das'
-                
-                # تعریف اصلی
                 definition = text[:250] + '...' if len(text) > 250 else text
-                
-                # مترادف‌ها (از لینک‌ها)
                 synonyms = []
                 if 'links' in page:
                     for link in page['links'][:5]:
                         if link['title'] != word and ':' not in link['title'] and len(link['title']) > 2:
                             synonyms.append(link['title'])
-                synonyms_str = ', '.join(synonyms[:3]) if synonyms else 'پیدا نشد (در Wiktionary چک کن)'
-                
-                # مثال‌ها (جملات ساده از متن)
-                examples = []
-                sentences = [s.strip() + '.' for s in text.split('.') if len(s.strip()) > 15][:4]
-                if not sentences:
-                    examples = [f"مثال برای {word}: {definition[:80]}..."]
-                else:
-                    examples = sentences
-                
-                # نکات گرامری
-                grammar_notes = f"آرتیکل: {article}. برای مبتدی: آرتیکل حفظ کن. متوسط: جملات رو بساز. پیشرفته: مترادف‌ها رو استفاده کن. جمع/صرف: در Wiktionary جزئیات."
-                
+                synonyms_str = ', '.join(synonyms[:3]) if synonyms else 'Nicht gefunden'
+                examples = [s.strip() + '.' for s in text.split('.') if len(s.strip()) > 15][:3]
+                if not examples:
+                    examples = [f"Beispiel für {word}: {definition[:80]}..."]
+                grammar_notes = f"Artikel: {article}. Für Anfänger: Artikel merken. Mittelstufe: Sätze bilden. Fortgeschritten: Synonyme verwenden. Plural/Declination: Siehe Wiktionary."
                 return {
                     'word': word.capitalize(),
                     'definition': definition,
                     'article': article,
                     'synonyms': synonyms_str,
-                    'examples': examples[:3],
-                    'grammar_notes': grammar_notes
+                    'examples': examples,
+                    'grammar_notes': grammar_notes,
+                    'source': 'Wiktionary'
                 }
             else:
-                return {'error': f'کلمه "{word}" در Wiktionary آلمانی پیدا نشد!'}
+                return {'error': f'Wort "{word}" in Wiktionary nicht gefunden!'}
         else:
-            return {'error': f'خطا در اتصال به Wiktionary (کد: {response.status_code}). ممکنه موقت باشه – بعداً امتحان کن یا /local بزن.'}
+            return {'error': f'API-Fehler (Code: {response.status_code}) – Verwende /local.'}
     except Exception as e:
-        return {'error': f'خطا: {str(e)} (اینترنت یا VPN چک کن)'}
+        return {'error': f'Fehler: {str(e)}'}
+
+# Lokale Definition (Deutsch zu Deutsch)
+def get_local_definition(word):
+    if word in local_dict:
+        data = local_dict[word]
+        level = user_levels.get(message.from_user.id, 'medium')
+        examples = [data['examples'].get(level, data['examples']['medium'])]
+        return {
+            'word': word.capitalize(),
+            'definition': data['definition'],
+            'article': data['article'],
+            'synonyms': data['synonyms'],
+            'examples': examples,
+            'grammar_notes': data['grammar'],
+            'source': 'Local'
+        }
+    else:
+        return {'error': f'Wort "{word}" im lokalen Wörterbuch nicht gefunden! /local für mehr.'}
 
 # /start
 @bot.message_handler(commands=['start'])
 def start_message(message):
-    bot.reply_to(message, "سلام! بات با User-Agent (@sprachschule67) بروز شد. کلمه آلمانی بفرست (مثل 'Haus' یا 'Freund'). اگر 403 موند، بگو /local بزنم! 🌍")
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton("Hilfe", callback_data="help"))
+    bot.reply_to(message, "Hallo! Ich bin dein deutsches Wörterbuch-Bot.\n\nBefehle:\n/level beginner – Anfängerniveau\n/local – Lokales Wörterbuch\n/history – Verlauf\n\nSchicke ein Wort (z.B. 'Haus')!", reply_markup=markup)
 
-# هر پیام (سرچ کلمه)
+# /level
+@bot.message_handler(commands=['level'])
+def set_level(message):
+    level = message.text.split()[1].lower() if len(message.text.split()) > 1 else 'medium'
+    if level in ['beginner', 'medium', 'advanced']:
+        user_levels[message.from_user.id] = level
+        bot.reply_to(message, f"Niveau {level} eingestellt! Beispiele werden angepasst.")
+    else:
+        bot.reply_to(message, "Niveaus: beginner, medium, advanced")
+
+# /local
+@bot.message_handler(commands=['local'])
+def local_mode(message):
+    markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
+    for word in list(local_dict.keys())[:5]:
+        markup.add(types.KeyboardButton(word))
+    bot.reply_to(message, "Lokaler Modus aktiviert! Wähle ein Wort:", reply_markup=markup)
+
+# /history
+@bot.message_handler(commands=['history'])
+def show_history(message):
+    hist = user_history.get(message.from_user.id, [])
+    if hist:
+        response = "Letzte 5 Wörter:\n" + "\n".join(hist[-5:])
+        bot.reply_to(message, response)
+    else:
+        bot.reply_to(message, "Verlauf leer! Suche ein Wort.")
+
+# Wortsuche
 @bot.message_handler(func=lambda message: True)
 def handle_message(message):
     word = message.text.strip().lower()
-    if word == '/start':
+    user_id = message.from_user.id
+    if word in ['/start', '/level', '/local', '/history']:
         return
     
     if len(word) < 2:
-        bot.reply_to(message, "لطفاً کلمه‌ای با حداقل ۲ حرف بفرست!")
+        bot.reply_to(message, "Wort mit mind. 2 Buchstaben eingeben!")
         return
-    
-    bot.reply_to(message, "در حال جستجو در Wiktionary... ⏳ (چند ثانیه)")
-    
-    data = get_german_definition(word)
-    
-    if 'error' in data:
-        bot.reply_to(message, f"❌ {data['error']}\nکلمه دیگه‌ای امتحان کن، یا /local برای حالت محلی (بدون API).")
-    else:
-        # پاسخ زیبا
-        response = f"📖 **{data['word']}**\n\n"
-        response += f"📰 **آرتیکل:** {data['article']} {data['word']}\n\n"
-        response += f"📚 **تعریف (به آلمانی):** {data['definition']}\n\n"
-        response += f"🔄 **مترادف‌ها:** {data['synonyms']}\n\n"
-        response += f"💡 **مثال‌ها (برای سطوح مختلف):**\n"
-        levels = ['مبتدی', 'متوسط', 'پیشرفته']
-        for i, ex in enumerate(data['examples']):
-            level = levels[min(i, 2)]
-            response += f"• {level}: {ex}\n"
-        response += f"\n📝 **نکات گرامری:** {data['grammar_notes']}\n\n"
-        response += "منبع: de.wiktionary.org. عالی برای زبان‌آموزها! (بات توسط @sprachschule67)"
-        
-        bot.reply_to(message, response, parse_mode='Markdown')
 
-# برای Render: webhook mode (حل ports)
+    # History speichern
+    if user_id not in user_history:
+        user_history[user_id] = []
+    if word not in user_history[user_id]:
+        user_history[user_id].append(word)
+        if len(user_history[user_id]) > 10:
+            user_history[user_id] = user_history[user_id][-10:]
+
+    # API versuchen, sonst local
+    data = get_german_definition(word)
+    if 'error' in data:
+        data = get_local_definition(word)
+        if 'error' in data:
+            bot.reply_to(message, data['error'])
+            return
+
+    # Antwort mit Niveau
+    level = user_levels.get(user_id, 'medium')
+    examples = data['examples'][:1] if level == 'beginner' else data['examples'][:2] if level == 'medium' else data['examples']
+
+    response = f"📖 **{data['word']}** ({data['source']})\n\n"
+    response += f"📰 **Artikel:** {data['article']} {data['word']}\n\n"
+    response += f"📚 **Definition:** {data['definition']}\n\n"
+    response += f"🔄 **Synonyme:** {data['synonyms']}\n\n"
+    response += f"💡 **Beispiele ({level}):**\n"
+    for ex in examples:
+        response += f"• {ex}\n"
+    response += f"\n📝 **Grammatik:** {data['grammar_notes']}"
+
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton("Mehr Beispiele", callback_data=f"more_ex_{word}"))
+    markup.add(types.InlineKeyboardButton("Synonyme", callback_data=f"syn_{word}"))
+    markup.add(types.InlineKeyboardButton("Niveau ändern", callback_data="level"))
+    bot.reply_to(message, response, parse_mode='Markdown', reply_markup=markup)
+
+# Inline-Buttons
+@bot.callback_query_handler(func=lambda call: True)
+def callback_query(call):
+    if call.data == "help":
+        bot.answer_callback_query(call.id, "Hilfe: /level, /local, /history")
+    elif call.data == "level":
+        bot.answer_callback_query(call.id, "Niveau mit /level ändern")
+    elif call.data.startswith("more_ex_"):
+        word = call.data.split("_")[2]
+        data = get_german_definition(word) if word not in local_dict else get_local_definition(word)
+        if 'examples' in data:
+            extra = "\n".join(data['examples'][1:3])
+            bot.answer_callback_query(call.id, f"Mehr Beispiele für {word}:\n{extra}")
+    elif call.data.startswith("syn_"):
+        word = call.data.split("_")[1]
+        data = get_german_definition(word) if word not in local_dict else get_local_definition(word)
+        bot.answer_callback_query(call.id, f"Synonyme für {word}: {data['synonyms']}")
+
+# Render Webhook
 app = Flask(__name__)
 
 @app.route(f'/{TOKEN}', methods=['POST'])
@@ -142,15 +325,13 @@ def webhook():
 
 @app.route('/', methods=['GET', 'HEAD'])
 def index():
-    return '<h1>بات دیکشنری آلمانی آنلاین! (@sprachschule67)</h1>'
+    return '<h1>Deutsches Wörterbuch-Bot online! (@sprachschule67)</h1>'
 
-# شروع webhook
 bot.remove_webhook()
 webhook_url = f'https://deutsche360-bot.onrender.com/{TOKEN}'
 bot.set_webhook(url=webhook_url)
 
-# اجرای سرور (باز کردن پورت)
 PORT = int(os.environ.get('PORT', 5000))
 app.run(host='0.0.0.0', port=PORT)
 
-print("بات با webhook شروع شد! (برای Render)")
+print("Deutscher Bot gestartet! (Deutsch zu Deutsch)")
