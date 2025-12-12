@@ -127,4 +127,6 @@ def handle_message(message):
 
 # شروع
 print("بات با User-Agent (@sprachschule67) شروع شد! (برای حل 403)")
-bot.polling()
+
+bot.remove_webhook()  # پاک کردن در قدیمی (اگر باشه)
+bot.infinity_polling()  # روش جدید برای Render
