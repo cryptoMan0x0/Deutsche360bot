@@ -1,4 +1,4 @@
-# Deutsches Wörterbuch-Bot – Glosbe API (alle Wörter, Beispiele, Synonyme realtime – wie professionelle Bots)
+# Deutsches Wörterbuch-Bot – Glosbe API with Cache (Step 2: Speed improvement – cache for repeated words)
 TOKEN = '8224460982:AAEPMMNfWxFfzqPTcqUCxKI0zJr8IP-dzG4'
 
 import telebot
@@ -10,7 +10,7 @@ import traceback
 import json
 
 bot = telebot.TeleBot(TOKEN)
-print("Bot initialized – Glosbe API for all German words")
+print("Bot initialized – Glosbe API with Cache (Step 2)")
 
 # Small local for grammar/notes (5-10 words, fallback – main: Glosbe API)
 grammar_fallback = {
@@ -26,9 +26,18 @@ grammar_fallback = {
 user_levels = {}
 user_history = {}
 
-# Glosbe API (free, reliable – definition, synonyms, examples, type)
+# Step 2: Cache for speed (in-memory, 100 words max)
+response_cache = {}
+max_cache = 100
+
+# Glosbe API (free, reliable – with cache integration)
 def get_glosbe_data(word):
-    print(f"Debug: Glosbe API for '{word}'")
+    # Step 2: Check cache first
+    if word in response_cache:
+        print(f"Debug: Cache hit for '{word}' – fast response from memory!")
+        return response_cache[word]
+    
+    print(f"Debug: Glosbe API call for '{word}' (cache miss)")
     url = f"https://glosbe.com/gapi/translate?from=de&dest=de&format=json&phrase={word}&page=1&results=10"
     try:
         response = requests.get(url, timeout=10)
@@ -65,8 +74,19 @@ def get_glosbe_data(word):
                 if not examples:
                     examples = [f"Beispiel: Der {word} ist interessant.", f"Der {word} in einem Satz.", f"Advanced: {word} in Kontext."]
                 grammar_notes = grammar_fallback.get(word, {}).get('grammar_notes', f'Grammatik für {word_type}: Standard Deklination/Konjugation (Glosbe + fallback).')
-                print(f"Debug: Glosbe success for '{word}'")
-                return {'word': phrase, 'definition': definition, 'article': article, 'type': word_type, 'synonyms': synonyms, 'examples': examples, 'grammar_notes': grammar_notes, 'source': 'Glosbe API'}
+                
+                # Step 2: Prepare full data
+                full_data = {'word': phrase, 'definition': definition, 'article': article, 'type': word_type, 'synonyms': synonyms, 'examples': examples, 'grammar_notes': grammar_notes, 'source': 'Glosbe API'}
+                
+                # Step 2: Cache the data (if not full)
+                if len(response_cache) >= max_cache:
+                    # Remove oldest (first key)
+                    oldest_key = next(iter(response_cache))
+                    del response_cache[oldest_key]
+                    print(f"Debug: Cache full – removed oldest '{oldest_key}'")
+                response_cache[word] = full_data
+                print(f"Debug: Glosbe success for '{word}' – cached!")
+                return full_data
             else:
                 print(f"Debug: No Glosbe data – fallback approximate")
         else:
@@ -83,7 +103,15 @@ def get_approximate(word):
     definition = f'Approximate Definition für "{word}": Häufiger Begriff im Deutschen (Glosbe API fallback).'
     examples = [f"Beispiel (beginner): Der {word} ist gut.", f"Medium: Ich sehe den {word}.", f"Advanced: {word} in der Literatur."]
     grammar_notes = grammar_fallback.get(word, {}).get('grammar_notes', f'Standard für {word_type}: Deklination/Konjugation (z.B. Plural für Nomen).')
-    return {'word': word.capitalize(), 'definition': definition, 'article': article, 'type': word_type, 'synonyms': 'Ähnliche Wörter aus Glosbe', 'examples': examples, 'grammar_notes': grammar_notes, 'source': 'Approximate'}
+    full_data = {'word': word.capitalize(), 'definition': definition, 'article': article, 'type': word_type, 'synonyms': 'Ähnliche Wörter aus Glosbe', 'examples': examples, 'grammar_notes': grammar_notes, 'source': 'Approximate'}
+    
+    # Step 2: Also cache approximate (for consistency)
+    if len(response_cache) >= max_cache:
+        oldest_key = next(iter(response_cache))
+        del response_cache[oldest_key]
+    response_cache[word] = full_data
+    print(f"Debug: Approximate cached for '{word}'")
+    return full_data
 
 # get_local (small)
 def get_local(word, message):
@@ -96,6 +124,12 @@ def get_local(word, message):
         data['synonyms'] = 'Nicht spezifiziert'
         data['examples'] = [f"Beispiel: Der {word}."]
         data['source'] = 'Local Grammar'
+        
+        # Step 2: Cache local too
+        if len(response_cache) >= max_cache:
+            oldest_key = next(iter(response_cache))
+            del response_cache[oldest_key]
+        response_cache[word_lower] = data
         return data
     return None
 
@@ -103,7 +137,12 @@ def get_local(word, message):
 @bot.message_handler(commands=['start'])
 def start_message(message):
     print(f"Debug: /start")
-    bot.reply_to(message, "Hallo! Deutsches Wörterbuch-Bot mit Glosbe API (wie professionelle Bots)!\nAlle Wörter abgedeckt: Definition, Synonyme, Beispiele, Grammatik realtime.\nBefehle: /level, /local (grammar fallback), /history\nTest: 'blau' oder 'philosophie' – vollständig!")
+    bot.reply_to(message, "Hallo! Deutsches Wörterbuch-Bot mit Glosbe API + Cache (Step 2)!\nAlle Wörter abgedeckt: Definition, Synonyme, Beispiele, Grammatik realtime.\nBefehle: /level, /local (grammar fallback), /history, /cache_info (neu: Cache stats)\nTest: 'blau' zweimal – zweites Mal super schnell!")
+
+@bot.message_handler(commands=['cache_info'])
+def cache_info(message):
+    cache_size = len(response_cache)
+    bot.reply_to(message, f"Cache Status: {cache_size}/{max_cache} Wörter gecached. (Step 2 active)")
 
 @bot.message_handler(commands=['level'])
 def set_level(message):
@@ -120,7 +159,7 @@ def local_mode(message):
     markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True, one_time_keyboard=True)
     for key in grammar_fallback.keys():
         markup.row(types.KeyboardButton(key))
-    bot.reply_to(message, "Grammar Fallback (10 Wörter): Wähle! (Haupt: Glosbe API)")
+    bot.reply_to(message, "Grammar Fallback (10 Wörter): Wähle! (Haupt: Glosbe API + Cache)")
 
 @bot.message_handler(commands=['history'])
 def show_history(message):
@@ -175,11 +214,11 @@ def handle_message(message):
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton("Mehr auf Glosbe (optional)", url=f"https://de.glosbe.com/de/de/{word}"))
         bot.reply_to(message, response, parse_mode='Markdown', reply_markup=markup)
-        print(f"Debug: Glosbe/Local response sent for '{word}'")
+        print(f"Debug: Response sent for '{word}' (with cache)")
 
     except Exception as e:
         print(f"Debug: Exception for '{word}': {str(e)}")
-        bot.reply_to(message, f"Fehler bei '{word}': {str(e)}. Glosbe API – probiere ein anderes Wort oder /start.")
+        bot.reply_to(message, f"Fehler bei '{word}': {str(e)}. Glosbe API + Cache – probiere ein anderes Wort oder /start.")
 
 @bot.callback_query_handler(func=lambda call: True)
 def callback_query(call):
@@ -199,7 +238,7 @@ def webhook():
 
 @app.route('/', methods=['GET'])
 def index():
-    return '<h1>Glosbe API Bot – alle Wörter abgedeckt!</h1>'
+    return '<h1>Glosbe API Bot with Cache (Step 2) – faster responses!</h1>'
 
 bot.remove_webhook()
 bot.set_webhook(url=f'https://deutsche360-bot.onrender.com/{TOKEN}')
@@ -207,4 +246,4 @@ bot.set_webhook(url=f'https://deutsche360-bot.onrender.com/{TOKEN}')
 PORT = int(os.environ.get('PORT', 5000))
 app.run(host='0.0.0.0', port=PORT)
 
-print("Bot with Glosbe API started – full coverage like pro bots!")
+print("Bot with Glosbe API + Cache (Step 2) started – full coverage with speed!")
